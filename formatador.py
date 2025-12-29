@@ -77,7 +77,7 @@ if arquivo_upload is None:
     st.warning("👈 Por favor, faça o upload da planilha na barra lateral para começar.")
     st.markdown("### Funcionalidades:")
     col1, col2, col3 = st.columns(3)
-    col1.metric("1. Remove Acentos", "Militão -> MILITAO")
+    col1.metric("1. Remove Acentos", "JOÃO -> JOAO")
     col2.metric("2. Preserva Vazios", "Mantém a ordem")
     col3.metric("3. Padroniza", "Caixa Alta")
 
