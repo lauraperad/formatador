@@ -4,15 +4,15 @@ import unicodedata
 import re
 from io import BytesIO
 
-# --- 1. Configuração da Página (Deve ser a primeira linha) ---
+# --- 1. Configuração da Página ---
 st.set_page_config(
     page_title="Padronizador Jurídico",
     page_icon="⚖️",
-    layout="wide", # Layout largo para parecer dashboard
+    layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- CSS Personalizado para "Limpar" a interface ---
+# --- CSS Personalizado ---
 st.markdown("""
 <style>
     .stButton>button {
@@ -28,12 +28,25 @@ st.markdown("""
 
 # --- Funções do Backend ---
 def limpar_nome(texto):
-    if not isinstance(texto, str):
-        return str(texto) if pd.notna(texto) else ""
+    # 1. SEGURANÇA: Se o valor for nulo (vazio/NaN), retorna vazio e não faz nada.
+    # Isso garante que a linha não seja excluída e mantém o alinhamento.
+    if pd.isna(texto) or texto == "":
+        return ""
+    
+    # Garante que é string (caso tenha algum número perdido no meio dos nomes)
+    texto = str(texto)
+    
+    # 2. Normaliza (separa acentos)
     nfkd_form = unicodedata.normalize('NFKD', texto)
     texto_sem_acento = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
+    
+    # 3. Caixa alta
     texto_upper = texto_sem_acento.upper()
+    
+    # 4. Remove caracteres especiais (mantém apenas letras e espaços)
     texto_limpo = re.sub(r'[^A-Z\s]', '', texto_upper)
+    
+    # 5. Remove espaços duplos
     return " ".join(texto_limpo.split())
 
 def to_excel(df):
@@ -48,26 +61,24 @@ with st.sidebar:
     st.title("Configurações")
     st.markdown("---")
     
-    # Upload na lateral
     arquivo_upload = st.file_uploader(
-        "1. Carregue a Planilha (Excel ou CSV)", 
+        "1. Carregue a Planilha", 
         type=["xlsx", "csv"]
     )
     
     st.markdown("---")
-    st.info("ℹ️ **Ajuda:** O sistema remove acentos, cedilhas e caracteres especiais, mantendo apenas letras maiúsculas.")
+    st.info("ℹ️ **Nota:** Linhas vazias serão mantidas vazias para preservar o alinhamento com os números dos processos.")
 
 # --- ÁREA PRINCIPAL ---
 st.title("⚖️ Sistema de Padronização de Nomes")
 st.markdown("##### Automação para tratamento de bases de dados jurídicas")
 
 if arquivo_upload is None:
-    # Tela de boas-vindas quando não tem arquivo
     st.warning("👈 Por favor, faça o upload da planilha na barra lateral para começar.")
-    st.markdown("### O que este sistema faz?")
+    st.markdown("### Funcionalidades:")
     col1, col2, col3 = st.columns(3)
-    col1.metric("1. Remove Acentos", "João -> JOAO")
-    col2.metric("2. Remove Especiais", "@Dra. -> DRA")
+    col1.metric("1. Remove Acentos", "Militão -> MILITAO")
+    col2.metric("2. Preserva Vazios", "Mantém a ordem")
     col3.metric("3. Padroniza", "Caixa Alta")
 
 else:
@@ -78,11 +89,9 @@ else:
         else:
             df = pd.read_excel(arquivo_upload)
 
-        # Lógica de seleção da coluna
         colunas = df.columns.tolist()
         indice_sugerido = 2 if len(colunas) >= 3 else 0
         
-        # Coloca a seleção na Barra Lateral também, para não poluir o centro
         with st.sidebar:
             if len(colunas) < 3:
                 st.warning("⚠️ Planilha com menos de 3 colunas.")
@@ -93,58 +102,54 @@ else:
                 index=indice_sugerido
             )
             
-            # Botão de Processar grande na lateral
             processar = st.button("🚀 Padronizar Agora")
 
-        # --- VISUALIZAÇÃO DOS DADOS ---
-        
-        # Se o botão ainda não foi clicado, mostra apenas a prévia
+        # --- VISUALIZAÇÃO ---
         if not processar:
             st.subheader("Visualização dos Dados Originais")
-            st.markdown(f"**Total de linhas encontradas:** `{len(df)}`")
+            st.info(f"O sistema identificou **{len(df)}** linhas. Nenhuma linha será excluída.")
             st.dataframe(df.head(10), use_container_width=True)
 
-        # Se clicou em processar
         else:
-            with st.spinner('Processando dados...'):
+            with st.spinner('Processando dados e mantendo alinhamento...'):
                 df_novo = df.copy()
+                
+                # Aplica a limpeza mantendo o índice original
                 df_novo[coluna_alvo] = df_novo[coluna_alvo].apply(limpar_nome)
                 
-                # --- DASHBOARD DE RESULTADOS ---
-                st.success("✅ Processamento concluído com sucesso!")
+                st.success("✅ Processamento concluído!")
                 
                 # Métricas
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Linhas Processadas", len(df_novo))
-                m2.metric("Coluna Tratada", coluna_alvo)
-                m3.metric("Status", "Finalizado", delta="OK")
+                m1, m2 = st.columns(2)
+                m1.metric("Total de Linhas", len(df_novo))
+                # Conta quantos vazios existem para conferência
+                vazios = df_novo[coluna_alvo].isna().sum() + (df_novo[coluna_alvo] == "").sum()
+                m2.metric("Células Vazias Mantidas", int(vazios))
                 
                 st.markdown("---")
                 
-                # Comparativo "Antes e Depois"
+                # Comparativo
                 st.subheader("🔍 Comparativo (Amostra)")
                 col_esq, col_dir = st.columns(2)
-                
                 with col_esq:
-                    st.markdown("**Original (Primeiros 5):**")
-                    st.dataframe(df[coluna_alvo].head(), use_container_width=True)
-                
+                    st.markdown("**Original:**")
+                    st.dataframe(df[[coluna_alvo]].head(10), use_container_width=True)
                 with col_dir:
-                    st.markdown("**Padronizado (Primeiros 5):**")
-                    st.dataframe(df_novo[coluna_alvo].head(), use_container_width=True)
+                    st.markdown("**Padronizado:**")
+                    st.dataframe(df_novo[[coluna_alvo]].head(10), use_container_width=True)
                 
                 st.markdown("---")
                 
-                # Área de Download Centralizada
+                # Download
                 st.subheader("📥 Download")
-                col_dwn, _ = st.columns([1, 2]) # Coluna menor para o botão não ficar gigante
+                col_dwn, _ = st.columns([1, 2])
                 with col_dwn:
                     st.download_button(
-                        label="Baixar Planilha Pronta (.xlsx)",
+                        label="Baixar Planilha (.xlsx)",
                         data=to_excel(df_novo),
                         file_name="Juizes_Padronizados.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
 
     except Exception as e:
-        st.error(f"❌ Ocorreu um erro ao ler o arquivo: {e}")
+        st.error(f"❌ Erro ao ler arquivo: {e}")
